@@ -8,17 +8,17 @@
 #include <time.h>
 #include <assert.h>
 
-#define FPS 21
-#define WIDTH 128
-#define HEIGHT 31
+#define FPS 5
+#define WIDTH 80
+#define HEIGHT 40
 #define BORDER_OFFSET 1
-#define FOOD_SPAWN_RATE 7
-#define FOOD_SIZE_EXTRA 2
+#define FOOD_SPAWN_RATE 15
+#define FOOD_SIZE_EXTRA 1
 
 #define SNAKE_HEAD_CHAR '>' 
-#define SNAKE_BODY_CHAR 'O'
+#define SNAKE_BODY_CHAR '-'
 #define SPACE_CHAR ' '
-#define FOOD_CHAR '$'
+#define FOOD_CHAR '@'
 
 #define BUF_SIZE 3
 
@@ -53,6 +53,10 @@ void cursorupn(int n) {
    printf("\x1B[%dA", n);
 }
 
+void clear_screen(){
+   printf("\033[2J\033[1;1H");
+}
+
 typedef struct Point {
    int x;
    int y;
@@ -62,18 +66,23 @@ void point_draw(char* buf, Point p, char c, uint64_t width) {
    buf[(p.y * width) + p.x] = c;
 }
 
+void point_offset(Point* p, int offset){
+   p->x += offset;
+   p->y += offset;
+}
+
 int randint(int n) {
-  if ((n - 1) == RAND_MAX) {
-    return rand();
-  } else {
-    assert (n <= RAND_MAX);
-    int end = RAND_MAX / n;
-    assert (end > 0);
-    end *= n;
-    int r;
-    while ((r = rand()) >= end);
-    return r % n;
-  }
+   if ((n - 1) == RAND_MAX) {
+      return rand();
+   } else {
+      assert (n <= RAND_MAX);
+      int end = RAND_MAX / n;
+      assert (end > 0);
+      end *= n;
+      int r;
+      while ((r = rand()) >= end);
+      return r % n;
+   }
 }
 
 typedef Box Food;
@@ -125,7 +134,7 @@ typedef enum Direction{
 typedef struct Snake {
    Point head;
    Direction direction;
-   
+
    Point* nodes;
    size_t nodes_len;
    size_t nodes_cap;
@@ -136,7 +145,7 @@ Snake* snake_init(){
    snake->direction = Right;
    snake->head = (Point){
       .x = 0,
-      .y = 0
+         .y = 0
    };
    snake->nodes_cap = 10;
    snake->nodes_len = 0;
@@ -171,11 +180,11 @@ void snake_grow(Snake *snake) {
          .x = head.x - 1,
          .y = head.y,
       };
-      
+
       snake_node_append(snake, tail);
       return;
    }
-   
+
    // Add before
    Point prev_tail = snake->nodes[snake->nodes_len - 1];
    Point new_tail = {
@@ -210,28 +219,28 @@ void snake_move(Snake* snake, uint64_t max_y, uint64_t max_x){
    if(snake->direction == Up){
       next_point = (Point){
          .y = snake->head.y - 1,
-         .x = snake->head.x
+            .x = snake->head.x
       };
    }
 
    if(snake->direction == Down){
       next_point = (Point){
          .y = snake->head.y + 1,
-         .x = snake->head.x
+            .x = snake->head.x
       };
    }
 
    if (snake->direction == Right){
       next_point = (Point){
          .y = snake->head.y,
-         .x = snake->head.x + 1
+            .x = snake->head.x + 1
       };
    }
 
    if (snake->direction == Left){
       next_point = (Point){
          .y = snake->head.y,
-         .x = snake->head.x - 1
+            .x = snake->head.x - 1
       };
    }
 
@@ -253,6 +262,16 @@ void snake_move(Snake* snake, uint64_t max_y, uint64_t max_x){
    return;
 }
 
+int snake_check_collisions(Snake* snake) {
+   for(int i = 0; i < snake->nodes_len; i++){
+      Point node = snake->nodes[i];
+      if (node.x == snake->head.x && node.y == snake->head.y){
+         return 1;
+      }
+   }
+   return 0;
+}
+
 typedef struct IsBorder {
    char c;
    int is_border;
@@ -261,7 +280,7 @@ typedef struct IsBorder {
 typedef struct Map {
    uint64_t width;
    uint64_t height;
-   
+
    uint64_t width_with_offfset;
    uint64_t height_with_offset;
 
@@ -294,7 +313,7 @@ Map* map_init(uint64_t width, uint64_t height) {
 
    memset(old_buf, SPACE_CHAR, map->__bytesize);
    memset(new_buf, SPACE_CHAR, map->__bytesize);
-   
+
    map->foods_cap = 10;
    map->foods_len = 0;
 
@@ -314,21 +333,21 @@ IsBorder map_is_border(Map* map, Point p) {
          ((uint64_t) p.x == width - 1 && (uint64_t) p.y == height - 1)) {
       return (IsBorder){
          .is_border = 1,
-         .c = '+'
+            .c = '+'
       };
    }
 
    if ((p.x == 0) || ((uint64_t) p.x == width - 1 )){
-       return (IsBorder) {
+      return (IsBorder) {
          .is_border= 1,
-         .c = '|'
+            .c = '|'
       };
    }
 
    if ((p.y == 0) || ((uint64_t) p.y == height - 1)){
       return (IsBorder){
          .is_border = 1,
-         .c = '-'
+            .c = '-'
       };
    }
 
@@ -344,7 +363,7 @@ void map_draw_borders(Map* map) {
 
          p.x = x;
          p.y = y;
-         
+
          IsBorder result = map_is_border(map, p);
          if (result.is_border) {
             point_draw(map->new_buf, p, result.c, map->width_with_offfset);
@@ -491,31 +510,35 @@ void game_destroy(Game* game){
    free(game);
 }
 
-void* render_loop(void* argp){
-   Game* game = (Game*) argp;
+void *game_loop(void *argp) {
+   Game *game = (Game *)argp;
    uint8_t fps = game->fps;
    uint8_t ms_per_frame = (uint8_t)1000 / FPS;
    uint8_t frame_count = 0;
-   while(1){
+   while (1) {
       // CODE BELOW IS 1 FRAME
       game_lock(game);
 
       if (game->stop == 1) {
-         break;
          game_unlock(game);
+         break;
       }
-      
+
       snake_move(game->snake, game->map->height, game->map->width);
+      int collides_with_itself = snake_check_collisions(game->snake);
+      if(collides_with_itself){
+         game_unlock(game);
+         clear_screen();
+         printf("YOU LOST!!!\n\n\n");
+         break;
+      }
+
       map_check_collisions(game->map, game->snake);
 
       if (frame_count % FOOD_SPAWN_RATE == 0) {
-         Food food = food_create(
-               game->map->width,
-               game->map->height,
-               game->snake->nodes,
-               game->snake->nodes_len,
-               game->map->foods,
-               game->map->foods_len);
+         Food food = food_create(game->map->width, game->map->height,
+               game->snake->nodes, game->snake->nodes_len,
+               game->map->foods, game->map->foods_len);
          map_save_food(game->map, food);
          frame_count = 0;
       }
@@ -549,12 +572,12 @@ void* read_loop(void* argp){
          perror("read_loop:read");
          break;
       }
-      
+
       game_lock(game);
       if (streq(buf, KEY_UP, BUF_SIZE)) {
          game->snake->direction = Up;
       }
-      
+
       if (streq(buf, KEY_DOWN, BUF_SIZE)) {
          game->snake->direction = Down;
       }
@@ -575,7 +598,7 @@ void* read_loop(void* argp){
          break;
       };
    }
-   
+
    set_termios(&prev_state);
 
    return NULL;
@@ -587,7 +610,7 @@ int main(){
    pthread_t render;
    pthread_t reader;
 
-   pthread_create(&render, 0, render_loop, game);
+   pthread_create(&render, 0, game_loop, game);
    pthread_create(&reader, 0, read_loop, game);
 
    pthread_join(render, NULL);

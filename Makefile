@@ -1,2 +1,2 @@
 run:
-	rm -rf .build && mkdir .build && gcc -o .build/app -Wextra -lc -Iinclude main.c termraw.c && .build/app
+	rm -rf .build && mkdir .build && gcc -o .build/app -Wextra -Iinclude main.c termraw.c -lpthread -lc && .build/app
